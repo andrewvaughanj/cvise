@@ -119,7 +119,13 @@ class TestEnvironment:
             cmd.append(self.test_case_path)
         cmd.extend(self.additional_files_paths)
 
-        return subprocess.run(cmd, cwd=self.folder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self.pid_queue:
+            self.pid_queue.put((self.order, proc.pid, True))
+        proc.communicate()
+        if self.pid_queue:
+            self.pid_queue.put((self.order, proc.pid, False))
+        return proc
 
 class TestManager:
     GIVEUP_CONSTANT = 50000
@@ -288,6 +294,7 @@ class TestManager:
             if not start and order in self.running_pids:
                 del self.running_pids[order]
             else:
+                assert pid not in self.running_pids
                 self.running_pids[order] = pid
 
     def stop_future(self, future):
