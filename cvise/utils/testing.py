@@ -370,11 +370,13 @@ class TestManager:
         return quit_loop
 
     def wait_for_first_success(self):
-        for future in self.futures:
+        for i, future in enumerate(self.futures):
             try:
                 test_env = future.result()
                 if test_env.success:
-                    # TODO: terminate the remaining futures
+                    for f in self.futures[i + 1:]:
+                        self.stop_future(f)
+                        self.release_future(f)
                     return test_env
             except TimeoutError:
                 pass
