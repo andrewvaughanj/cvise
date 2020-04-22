@@ -52,10 +52,10 @@ class ClangBinarySearchPass(AbstractPass):
 
             try:
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                pid_tuple = (task_id, proc.pid)
-                pid_queue.put(pid_tuple)
+                pid_queue.put((task_id, proc.pid, True))
                 (stdout, stderr) = proc.communicate()
                 tmp_file.write(stdout)
+                pid_queue.put((task_id, proc.pid, False))
             except subprocess.SubprocessError:
                 return (PassResult.ERROR, state)
 
