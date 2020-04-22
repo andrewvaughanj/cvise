@@ -273,8 +273,8 @@ class TestManager:
         if not self.save_temps:
             rmfolder(name)
 
-    def release_folders(self, futures, temporary_folders):
-        for future in futures:
+    def release_folders(self, temporary_folders):
+        for future in self.futures:
             self.release_folder(future, temporary_folders)
         assert not any(temporary_folders)
 
@@ -282,11 +282,11 @@ class TestManager:
     def log_key_event(cls, event):
         logging.info("****** %s  ******" % event)
 
-    def process_done_futures(self, futures, temporary_folders, pid_queue, future_to_order):
+    def process_done_futures(self, temporary_folders, pid_queue, future_to_order):
         quit_loop = False
         new_futures = []
         running_pids = {}
-        for future in futures:
+        for future in self.futures:
             # all items after first successfull (or STOP) should be cancelled
             if quit_loop:
                 future.cancel()
@@ -349,14 +349,15 @@ class TestManager:
                 new_futures.append(future)
 
         new_futures_set = set(new_futures)
-        for future in futures:
+        for future in self.futures:
             if not future in new_futures_set:
                 self.release_folder(future, temporary_folders)
 
-        return (quit_loop, new_futures)
+        self.futures = new_futures
+        return quit_loop
 
-    def wait_for_first_success(self, futures):
-        for future in futures:
+    def wait_for_first_success(self):
+        for future in self.futures:
             try:
                 test_env = future.result()
                 if test_env.success:
@@ -376,20 +377,19 @@ class TestManager:
             m = Manager()
             pid_queue = m.Queue()
             future_to_order = {}
-            futures = []
+            assert not len(self.futures)
             temporary_folders = {}
             order = 1
             while self.state != None:
                 # do not create too many states
-                if len(futures) >= self.parallel_tests:
-                    wait(futures, return_when=FIRST_COMPLETED)
+                if len(self.futures) >= self.parallel_tests:
+                    wait(self.futures, return_when=FIRST_COMPLETED)
 
-                (quit_loop, futures) = self.process_done_futures(futures, temporary_folders,
-                        pid_queue, future_to_order)
+                quit_loop = self.process_done_futures(temporary_folders, pid_queue, future_to_order)
                 if quit_loop:
-                    success = self.wait_for_first_success(futures)
+                    success = self.wait_for_first_success()
                     self.terminate_all(pool)
-                    return (success, futures, temporary_folders)
+                    return (success, temporary_folders)
 
                 folder = tempfile.mkdtemp(prefix=self.TEMP_PREFIX, dir=self.root)
                 test_env = TestEnvironment(self.state, order, self.test_script, folder,
@@ -398,14 +398,14 @@ class TestManager:
                 future = pool.schedule(test_env.run, timeout=self.timeout)
                 future_to_order[future] = order
                 temporary_folders[future] = folder
-                futures.append(future)
+                self.futures.append(future)
                 order += 1
                 state = self.current_pass.advance(self.current_test_case, self.state)
                 # we are at the end of enumeration
                 if state == None:
-                    success = self.wait_for_first_success(futures)
+                    success = self.wait_for_first_success()
                     self.terminate_all(pool)
-                    return (success, futures, temporary_folders)
+                    return (success, temporary_folders)
                 else:
                     self.state = state
 
@@ -457,13 +457,14 @@ class TestManager:
                         self.log_key_event("toggle print diff")
                         self.print_diff = not self.print_diff
 
-                success_env, futures, temporary_folders = self.run_parallel_tests()
+                success_env, temporary_folders = self.run_parallel_tests()
                 if not success_env:
                     self.remove_root()
                     break
 
                 self.process_result(success_env)
-                self.release_folders(futures, temporary_folders)
+                self.release_folders(temporary_folders)
+                self.futures.clear()
 
             # Cache result of this pass
             if not self.no_cache:
