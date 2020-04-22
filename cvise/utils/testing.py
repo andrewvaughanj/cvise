@@ -268,21 +268,21 @@ class TestManager:
         else:
             raise InsaneTestCaseError(self.test_cases, p.args)
 
-    def release_folder(self, future, temporary_folders):
-        name = temporary_folders.pop(future)
+    def release_folder(self, future):
+        name = self.temporary_folders.pop(future)
         if not self.save_temps:
             rmfolder(name)
 
-    def release_folders(self, temporary_folders):
+    def release_folders(self):
         for future in self.futures:
-            self.release_folder(future, temporary_folders)
-        assert not any(temporary_folders)
+            self.release_folder(future)
+        assert not self.temporary_folders
 
     @classmethod
     def log_key_event(cls, event):
         logging.info("****** %s  ******" % event)
 
-    def process_done_futures(self, temporary_folders, pid_queue, future_to_order):
+    def process_done_futures(self, pid_queue, future_to_order):
         quit_loop = False
         new_futures = []
         running_pids = {}
@@ -351,7 +351,7 @@ class TestManager:
         new_futures_set = set(new_futures)
         for future in self.futures:
             if not future in new_futures_set:
-                self.release_folder(future, temporary_folders)
+                self.release_folder(future)
 
         self.futures = new_futures
         return quit_loop
@@ -377,19 +377,19 @@ class TestManager:
             m = Manager()
             pid_queue = m.Queue()
             future_to_order = {}
-            assert not len(self.futures)
-            temporary_folders = {}
+            assert not self.futures
+            assert not self.temporary_folders
             order = 1
             while self.state != None:
                 # do not create too many states
                 if len(self.futures) >= self.parallel_tests:
                     wait(self.futures, return_when=FIRST_COMPLETED)
 
-                quit_loop = self.process_done_futures(temporary_folders, pid_queue, future_to_order)
+                quit_loop = self.process_done_futures(pid_queue, future_to_order)
                 if quit_loop:
                     success = self.wait_for_first_success()
                     self.terminate_all(pool)
-                    return (success, temporary_folders)
+                    return success
 
                 folder = tempfile.mkdtemp(prefix=self.TEMP_PREFIX, dir=self.root)
                 test_env = TestEnvironment(self.state, order, self.test_script, folder,
@@ -397,7 +397,7 @@ class TestManager:
                         self.current_pass.transform, pid_queue)
                 future = pool.schedule(test_env.run, timeout=self.timeout)
                 future_to_order[future] = order
-                temporary_folders[future] = folder
+                self.temporary_folders[future] = folder
                 self.futures.append(future)
                 order += 1
                 state = self.current_pass.advance(self.current_test_case, self.state)
@@ -405,13 +405,14 @@ class TestManager:
                 if state == None:
                     success = self.wait_for_first_success()
                     self.terminate_all(pool)
-                    return (success, temporary_folders)
+                    return success
                 else:
                     self.state = state
 
     def run_pass(self, pass_):
         self.current_pass = pass_
         self.futures = []
+        self.temporary_folders = {}
         self.create_root()
         pass_key = repr(self.current_pass)
 
@@ -457,14 +458,15 @@ class TestManager:
                         self.log_key_event("toggle print diff")
                         self.print_diff = not self.print_diff
 
-                success_env, temporary_folders = self.run_parallel_tests()
+                success_env = self.run_parallel_tests()
                 if not success_env:
                     self.remove_root()
                     break
 
                 self.process_result(success_env)
-                self.release_folders(temporary_folders)
+                self.release_folders()
                 self.futures.clear()
+                self.temporary_folders.clear()
 
             # Cache result of this pass
             if not self.no_cache:
