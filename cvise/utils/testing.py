@@ -14,10 +14,12 @@ import subprocess
 import sys
 import tempfile
 import weakref
+import inspect
 
 import concurrent.futures
 from concurrent.futures import wait, FIRST_COMPLETED, TimeoutError
 from pebble import ProcessPool
+from multiprocessing import Queue, Manager
 
 from .. import CVise
 from cvise.passes.abstract import AbstractPass, PassResult
@@ -37,7 +39,8 @@ def rmfolder(name):
         pass
 
 class TestEnvironment:
-    def __init__(self, state, order, test_script, folder, test_case, additional_files, transform):
+    def __init__(self, state, order, test_script, folder, test_case,
+            additional_files, transform, pid_queue=None):
         self.test_case = None
         self.additional_files = set()
         self.state = state
@@ -48,6 +51,7 @@ class TestEnvironment:
         self.result = None
         self.order = order
         self.transform = transform
+        self.pid_queue = pid_queue
         self.copy_files(test_case, additional_files)
 
     def copy_files(self, test_case, additional_files):
@@ -91,7 +95,10 @@ class TestEnvironment:
     def run(self):
         try:
             # transform by state
-            (result, self.state) = self.transform(self.test_case_path, self.state)
+            if len(inspect.getargspec(self.transform).args) == 5:
+                (result, self.state) = self.transform(self.test_case_path, self.state, self.order, self.pid_queue)
+            else:
+                (result, self.state) = self.transform(self.test_case_path, self.state)
             self.result = result
             if self.result != PassResult.OK:
                 return self
@@ -275,19 +282,31 @@ class TestManager:
     def log_key_event(cls, event):
         logging.info("****** %s  ******" % event)
 
-    def process_done_futures(self, futures, temporary_folders):
+    def process_done_futures(self, futures, temporary_folders, pid_queue, future_to_order):
         quit_loop = False
         new_futures = []
+        running_pids = {}
         for future in futures:
             # all items after first successfull (or STOP) should be cancelled
             if quit_loop:
                 future.cancel()
+                # terminate subprocesses started by a test_env
+                while not pid_queue.empty():
+                    order, pid = pid_queue.get()
+                    running_pids[order] = pid
+                future_order = future_to_order[future]
+                if future_order in running_pids:
+                    try:
+                        os.kill(running_pids[future_order], signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    del running_pids[future_order]
+
                 continue
 
             if future.done():
                 if future.exception():
                     if type(future.exception()) is TimeoutError:
-                        future.cancel()
                         logging.debug("Test timed out!")
                         continue
                     else:
@@ -341,9 +360,10 @@ class TestManager:
             try:
                 test_env = future.result()
                 if test_env.success:
+                    # TODO: terminate the remaining futures
                     return test_env
             except TimeoutError:
-                future.cancel()
+                pass
         return None
 
     @classmethod
@@ -353,6 +373,9 @@ class TestManager:
 
     def run_parallel_tests(self):
         with ProcessPool(max_workers=self.parallel_tests) as pool:
+            m = Manager()
+            pid_queue = m.Queue()
+            future_to_order = {}
             futures = []
             temporary_folders = {}
             order = 1
@@ -361,7 +384,8 @@ class TestManager:
                 if len(futures) >= self.parallel_tests:
                     wait(futures, return_when=FIRST_COMPLETED)
 
-                (quit_loop, futures) = self.process_done_futures(futures, temporary_folders)
+                (quit_loop, futures) = self.process_done_futures(futures, temporary_folders,
+                        pid_queue, future_to_order)
                 if quit_loop:
                     success = self.wait_for_first_success(futures)
                     self.terminate_all(pool)
@@ -370,8 +394,9 @@ class TestManager:
                 folder = tempfile.mkdtemp(prefix=self.TEMP_PREFIX, dir=self.root)
                 test_env = TestEnvironment(self.state, order, self.test_script, folder,
                         self.current_test_case, self.test_cases ^ {self.current_test_case},
-                        self.current_pass.transform)
+                        self.current_pass.transform, pid_queue)
                 future = pool.schedule(test_env.run, timeout=self.timeout)
+                future_to_order[future] = order
                 temporary_folders[future] = folder
                 futures.append(future)
                 order += 1

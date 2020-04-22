@@ -39,7 +39,7 @@ class ClangBinarySearchPass(AbstractPass):
         else:
             return int(m.group(1))
 
-    def transform(self, test_case, state):
+    def transform(self, test_case, state, task_id, pid_queue):
         logging.debug("TRANSFORM: index = {}, chunk = {}, instances = {}".format(state.index, state.chunk, state.instances))
 
         tmp = os.path.dirname(test_case)
@@ -51,7 +51,11 @@ class ClangBinarySearchPass(AbstractPass):
             logging.debug(" ".join(cmd))
 
             try:
-                proc = subprocess.run(cmd, universal_newlines=True, stdout=tmp_file, stderr=subprocess.PIPE)
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                pid_tuple = (task_id, proc.pid)
+                pid_queue.put(pid_tuple)
+                (stdout, stderr) = proc.communicate()
+                tmp_file.write(stdout)
             except subprocess.SubprocessError:
                 return (PassResult.ERROR, state)
 
