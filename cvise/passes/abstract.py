@@ -2,6 +2,7 @@ import re
 import enum
 import logging
 import copy
+import subprocess
 
 from enum import Enum, auto
 
@@ -88,3 +89,28 @@ class AbstractPass:
 
     def transform(self, test_case, state):
         raise NotImplementedError("Class {} has not implemented 'transform'!".format(type(self).__name__))
+
+@enum.unique
+class ProcessEventType(Enum):
+    STARTED = auto()
+    FINISHED = auto()
+
+class ProcessEvent:
+    def __init__(self, test_env_id, pid, event_type):
+        self.test_env_id = test_env_id
+        self.pid = pid
+        self.type = event_type
+
+class ProcessEventNotifier:
+    def __init__(self, pid_queue, test_env_id):
+        self.pid_queue = pid_queue
+        self.test_env_id = test_env_id
+
+    def run_process(self, cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE):
+        proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, universal_newlines=True, encoding='utf8')
+        if self.pid_queue:
+            self.pid_queue.put(ProcessEvent(self.test_env_id, proc.pid, ProcessEventType.STARTED))
+        stdout, stderr = proc.communicate()
+        if self.pid_queue:
+            self.pid_queue.put(ProcessEvent(self.test_env_id, proc.pid, ProcessEventType.FINISHED))
+        return (stdout, stderr, proc.returncode)

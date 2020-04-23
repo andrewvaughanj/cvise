@@ -22,7 +22,7 @@ from pebble import ProcessPool
 from multiprocessing import Queue, Manager
 
 from .. import CVise
-from cvise.passes.abstract import AbstractPass, PassResult
+from cvise.passes.abstract import *
 
 from . import readkey
 from .error import InsaneTestCaseError
@@ -95,8 +95,9 @@ class TestEnvironment:
     def run(self):
         try:
             # transform by state
-            if len(inspect.getargspec(self.transform).args) == 5:
-                (result, self.state) = self.transform(self.test_case_path, self.state, self.order, self.pid_queue)
+            if len(inspect.getargspec(self.transform).args) == 4:
+                (result, self.state) = self.transform(self.test_case_path, self.state,
+                        ProcessEventNotifier(self.pid_queue, self.order))
             else:
                 (result, self.state) = self.transform(self.test_case_path, self.state)
             self.result = result
@@ -104,8 +105,7 @@ class TestEnvironment:
                 return self
 
             # run test script
-            p = self.run_test()
-            self.exitcode = p.returncode
+            self.exitcode = self.run_test()
             return self
         except OSError as e:
             # this can happen when we clean up temporary files for cancelled processes
@@ -118,14 +118,8 @@ class TestEnvironment:
         if self.test_case is not None:
             cmd.append(self.test_case_path)
         cmd.extend(self.additional_files_paths)
-
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if self.pid_queue:
-            self.pid_queue.put((self.order, proc.pid, True))
-        proc.communicate()
-        if self.pid_queue:
-            self.pid_queue.put((self.order, proc.pid, False))
-        return proc
+        _, _, returncode = ProcessEventNotifier(self.pid_queue, self.order).run_process(cmd)
+        return returncode
 
 class TestManager:
     GIVEUP_CONSTANT = 50000
@@ -267,12 +261,13 @@ class TestManager:
         test_env = TestEnvironment(None, 0, self.test_script, folder, None, self.test_cases, None)
         logging.debug("sanity check tmpdir = {}".format(test_env.folder))
 
-        p = test_env.run_test()
+        returncode = test_env.run_test()
         rmfolder(folder)
-        if not p.returncode:
+        if returncode == 0:
             logging.debug("sanity check successful")
         else:
-            raise InsaneTestCaseError(self.test_cases, p.args)
+            # TODO
+            raise InsaneTestCaseError(self.test_cases, [])
 
     def release_folder(self, future):
         name = self.temporary_folders.pop(future)
@@ -290,12 +285,13 @@ class TestManager:
 
     def read_pid_queue(self):
         while not self.pid_queue.empty():
-            order, pid, start = self.pid_queue.get()
-            if not start and order in self.running_pids:
-                del self.running_pids[order]
+            event = self.pid_queue.get()
+            if event.type == ProcessEventType.FINISHED:
+                if event.test_env_id in self.running_pids:
+                    del self.running_pids[event.test_env_id]
             else:
-                assert pid not in self.running_pids
-                self.running_pids[order] = pid
+                assert event.test_env_id not in self.running_pids
+                self.running_pids[event.test_env_id] = event.pid
 
     def stop_future(self, future):
         future.cancel()

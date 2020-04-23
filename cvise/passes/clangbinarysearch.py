@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 
-from cvise.passes.abstract import AbstractPass, BinaryState, PassResult
+from cvise.passes.abstract import *
 
 class ClangBinarySearchPass(AbstractPass):
     def check_prerequisites(self):
@@ -39,11 +39,11 @@ class ClangBinarySearchPass(AbstractPass):
         else:
             return int(m.group(1))
 
-    def transform(self, test_case, state, task_id, pid_queue):
+    def transform(self, test_case, state, process_event_notifier):
         logging.debug("TRANSFORM: index = {}, chunk = {}, instances = {}".format(state.index, state.chunk, state.instances))
 
         tmp = os.path.dirname(test_case)
-        with tempfile.NamedTemporaryFile(delete=False, dir=tmp) as tmp_file:
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, dir=tmp) as tmp_file:
             args = ["--transformation={}".format(self.arg), "--counter={}".format(state.index + 1), "--to-counter={}".format(state.end())]
             if self.clang_delta_std:
                 args.append('--std={}'.format(self.clang_delta_std))
@@ -51,17 +51,14 @@ class ClangBinarySearchPass(AbstractPass):
             logging.debug(" ".join(cmd))
 
             try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                pid_queue.put((task_id, proc.pid, True))
-                (stdout, stderr) = proc.communicate()
+                stdout, stderr, returncode = process_event_notifier.run_process(cmd)
                 tmp_file.write(stdout)
-                pid_queue.put((task_id, proc.pid, False))
             except subprocess.SubprocessError:
                 return (PassResult.ERROR, state)
 
-        if proc.returncode == 0:
+        if returncode == 0:
             shutil.move(tmp_file.name, test_case)
             return (PassResult.OK, state)
         else:
             os.unlink(tmp_file.name)
-            return (PassResult.STOP if proc.returncode == 255 else PassResult.ERROR, state)
+            return (PassResult.STOP if returncode == 255 else PassResult.ERROR, state)
