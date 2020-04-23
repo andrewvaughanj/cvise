@@ -279,35 +279,23 @@ class TestManager:
     def log_key_event(cls, event):
         logging.info("****** %s  ******" % event)
 
-    def read_pid_queue(self):
+    def kill_pid_queue(self):
+        active_pids = set()
         while not self.pid_queue.empty():
             event = self.pid_queue.get()
             if event.type == ProcessEventType.FINISHED:
-                if event.test_env_id in self.running_pids:
-                    del self.running_pids[event.test_env_id]
+                active_pids.discard(event.pid)
             else:
-                assert event.test_env_id not in self.running_pids
-                self.running_pids[event.test_env_id] = event.pid
-
-    def stop_future(self, future):
-        future.cancel()
-        # terminate subprocesses started by a test_env
-        self.read_pid_queue()
-        future_order = self.future_to_order[future]
-        if future_order in self.running_pids:
+                active_pids.add(event.pid)
+        for pid in active_pids:
             try:
-                os.kill(self.running_pids[future_order], signal.SIGTERM)
+                os.kill(pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            del self.running_pids[future_order]
 
     def release_future(self, future):
         self.futures.remove(future)
         self.release_folder(future)
-        order = self.future_to_order[future]
-        if order in self.running_pids:
-            del self.running_pids[order]
-        del self.future_to_order[future]
 
     def process_done_futures(self):
         quit_loop = False
@@ -315,7 +303,7 @@ class TestManager:
         for future in self.futures:
             # all items after first successfull (or STOP) should be cancelled
             if quit_loop:
-                self.stop_future(future)
+                future.cancel()
                 continue
 
             if future.done():
@@ -374,7 +362,8 @@ class TestManager:
                 test_env = future.result()
                 if test_env.success:
                     for f in self.futures[i + 1:]:
-                        self.stop_future(f)
+                        # TODO: remove?
+                        f.cancel()
                         self.release_future(f)
                     return test_env
             except TimeoutError:
@@ -387,10 +376,8 @@ class TestManager:
         pool.join()
 
     def run_parallel_tests(self):
-        assert not self.future_to_order
         assert not self.futures
         assert not self.temporary_folders
-        assert not self.running_pids
         with ProcessPool(max_workers=self.parallel_tests) as pool:
             order = 1
             while self.state != None:
@@ -409,7 +396,6 @@ class TestManager:
                         self.current_test_case, self.test_cases ^ {self.current_test_case},
                         self.current_pass.transform, self.pid_queue)
                 future = pool.schedule(test_env.run, timeout=self.timeout)
-                self.future_to_order[future] = order
                 self.temporary_folders[future] = folder
                 self.futures.append(future)
                 order += 1
@@ -426,10 +412,8 @@ class TestManager:
         self.current_pass = pass_
         self.futures = []
         self.temporary_folders = {}
-        self.future_to_order = {}
         m = Manager()
         self.pid_queue = m.Queue()
-        self.running_pids = {}
         self.create_root()
         pass_key = repr(self.current_pass)
 
@@ -462,7 +446,6 @@ class TestManager:
             # create initial state
             self.state = self.current_pass.new(self.current_test_case)
             self.skip = False
-            self.since_success = 0
 
             while self.state != None and not self.skip:
                 # Ignore more key presses after skip has been detected
@@ -476,6 +459,7 @@ class TestManager:
                         self.print_diff = not self.print_diff
 
                 success_env = self.run_parallel_tests()
+                self.kill_pid_queue()
                 if not success_env:
                     self.remove_root()
                     break
@@ -484,9 +468,7 @@ class TestManager:
                 # TODO: put to a function
                 self.release_folders()
                 self.futures.clear()
-                self.future_to_order.clear()
                 self.temporary_folders.clear()
-                self.running_pids.clear()
 
             # Cache result of this pass
             if not self.no_cache:
@@ -508,7 +490,6 @@ class TestManager:
         shutil.copy(test_env.test_case_path, self.current_test_case)
 
         self.state = self.current_pass.advance_on_success(test_env.test_case_path, test_env.state)
-        self.since_success = 0
         self.pass_statistic.update(self.current_pass, success=True)
 
         pct = 100 - (self.total_file_size * 100.0 / self.orig_total_file_size)
