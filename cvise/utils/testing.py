@@ -360,10 +360,6 @@ class TestManager:
             try:
                 test_env = future.result()
                 if test_env.success:
-                    for f in self.futures[i + 1:]:
-                        # TODO: remove?
-                        f.cancel()
-                        self.release_future(f)
                     return test_env
             except TimeoutError:
                 pass
