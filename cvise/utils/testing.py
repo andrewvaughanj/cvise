@@ -262,7 +262,6 @@ class TestManager:
         if returncode == 0:
             logging.debug("sanity check successful")
         else:
-            # TODO
             raise InsaneTestCaseError(self.test_cases, [])
 
     def release_folder(self, future):
@@ -465,10 +464,8 @@ class TestManager:
                     break
 
                 self.process_result(success_env)
-                # TODO: put to a function
                 self.release_folders()
                 self.futures.clear()
-                self.temporary_folders.clear()
 
             # Cache result of this pass
             if not self.no_cache:
