@@ -119,6 +119,7 @@ class TestEnvironment:
 
 class TestManager:
     GIVEUP_CONSTANT = 50000
+    MAX_TIMEOUTS = 20
     MAX_CRASH_DIRS = 10
     MAX_EXTRA_DIRS = 25000
     TEMP_PREFIX = "cvise-"
@@ -308,7 +309,11 @@ class TestManager:
             if future.done():
                 if future.exception():
                     if type(future.exception()) is TimeoutError:
+                        self.timeout_count += 1
                         logging.debug("Test timed out!")
+                        if self.timeout_count >= self.MAX_TIMEOUTS:
+                            logging.warning("Maximum number of timeout were reached: %d" % self.MAX_TIMEOUTS)
+                            quit_loop = True
                         continue
                     else:
                         raise future.exception()
@@ -375,6 +380,7 @@ class TestManager:
         assert not self.temporary_folders
         with ProcessPool(max_workers=self.parallel_tests) as pool:
             order = 1
+            self.timeout_count = 0
             while self.state != None:
                 # do not create too many states
                 if len(self.futures) >= self.parallel_tests:
