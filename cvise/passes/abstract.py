@@ -87,7 +87,7 @@ class AbstractPass:
     def advance_on_success(self, test_case, state):
         raise NotImplementedError("Class {} has not implemented 'advance_on_success'!".format(type(self).__name__))
 
-    def transform(self, test_case, state):
+    def transform(self, test_case, state, process_event_notifier):
         raise NotImplementedError("Class {} has not implemented 'transform'!".format(type(self).__name__))
 
 @enum.unique

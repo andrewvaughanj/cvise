@@ -33,9 +33,8 @@ class IndentPass(AbstractPass):
         else:
             raise UnknownArgumentError()
 
-        try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except subprocess.SubprocessError:
+        _, _, returncode = process_event_notifier.run_process(cmd)
+        if returncode != 0:
             return (PassResult.ERROR, state)
 
         with open(test_case, "r") as in_file:

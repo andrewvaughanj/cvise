@@ -50,15 +50,11 @@ class ClangBinarySearchPass(AbstractPass):
             cmd = [self.external_programs["clang_delta"]] + args + [test_case]
             logging.debug(" ".join(cmd))
 
-            try:
-                stdout, stderr, returncode = process_event_notifier.run_process(cmd)
-                tmp_file.write(stdout)
-            except subprocess.SubprocessError:
-                return (PassResult.ERROR, state)
-
-        if returncode == 0:
-            shutil.move(tmp_file.name, test_case)
-            return (PassResult.OK, state)
-        else:
-            os.unlink(tmp_file.name)
-            return (PassResult.STOP if returncode == 255 else PassResult.ERROR, state)
+            stdout, stderr, returncode = process_event_notifier.run_process(cmd)
+            tmp_file.write(stdout)
+            if returncode == 0:
+                shutil.move(tmp_file.name, test_case)
+                return (PassResult.OK, state)
+            else:
+                os.unlink(tmp_file.name)
+                return (PassResult.STOP if returncode == 255 else PassResult.ERROR, state)

@@ -14,7 +14,6 @@ import subprocess
 import sys
 import tempfile
 import weakref
-import inspect
 
 import concurrent.futures
 from concurrent.futures import wait, FIRST_COMPLETED, TimeoutError
@@ -95,11 +94,8 @@ class TestEnvironment:
     def run(self):
         try:
             # transform by state
-            if len(inspect.getargspec(self.transform).args) == 4:
-                (result, self.state) = self.transform(self.test_case_path, self.state,
-                        ProcessEventNotifier(self.pid_queue, self.order))
-            else:
-                (result, self.state) = self.transform(self.test_case_path, self.state)
+            (result, self.state) = self.transform(self.test_case_path, self.state,
+                    ProcessEventNotifier(self.pid_queue, self.order))
             self.result = result
             if self.result != PassResult.OK:
                 return self
