@@ -95,7 +95,7 @@ class TestEnvironment:
         try:
             # transform by state
             (result, self.state) = self.transform(self.test_case_path, self.state,
-                    ProcessEventNotifier(self.pid_queue, self.order))
+                    ProcessEventNotifier(self.pid_queue))
             self.result = result
             if self.result != PassResult.OK:
                 return self
@@ -114,7 +114,7 @@ class TestEnvironment:
         if self.test_case is not None:
             cmd.append(self.test_case_path)
         cmd.extend(self.additional_files_paths)
-        _, _, returncode = ProcessEventNotifier(self.pid_queue, self.order).run_process(cmd)
+        _, _, returncode = ProcessEventNotifier(self.pid_queue).run_process(cmd)
         return returncode
 
 class TestManager:
