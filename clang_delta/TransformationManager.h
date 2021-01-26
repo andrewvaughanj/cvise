@@ -114,6 +114,8 @@ public:
 
   void outputNumTransformationInstances();
 
+  void outputTransformationInstances();
+
   void outputNumTransformationInstancesToStderr();
 
   void printTransformations();

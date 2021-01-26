@@ -11,13 +11,14 @@
 #ifndef TRANSFORMATION_H
 #define TRANSFORMATION_H
 
-#include <string>
-#include <cstdlib>
-#include <cassert>
-#include "llvm/ADT/SmallPtrSet.h"
+#include "RewriteUtils.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/Rewrite/Core/Rewriter.h"
-#include "RewriteUtils.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include <cassert>
+#include <cstdlib>
+#include <string>
+#include <vector>
 
 namespace clang {
   class CompilerInstance;
@@ -69,49 +70,26 @@ template<typename T>
 friend class clang_delta_common_visitor::CommonRenameClassRewriteVisitor;
 
 public:
-
   Transformation(const char *TransName, const char *Desc)
-    : Name(TransName),
-      TransformationCounter(-1),
-      ValidInstanceNum(0),
-      QueryInstanceOnly(false),
-      Context(NULL),
-      SrcManager(NULL),
-      TransError(TransSuccess),
-      DescriptionString(Desc),
-      RewriteHelper(NULL),
-      Rewritten(false),
-      MultipleRewrites(false),
-      ToCounter(-1),
-      DoReplacement(false),
-      CheckReference(false),
-      WarnOnCounterOutOfBounds(false)
-  {
+      : Name(TransName), TransformationCounter(-1), ValidInstanceNum(0),
+        Instances(), QueryInstanceOnly(false), Context(NULL), SrcManager(NULL),
+        TransError(TransSuccess), DescriptionString(Desc), RewriteHelper(NULL),
+        Rewritten(false), MultipleRewrites(false), ToCounter(-1),
+        DoReplacement(false), CheckReference(false),
+        WarnOnCounterOutOfBounds(false) {
     // Nothing to do
   }
 
-  Transformation(const char *TransName, 
-                 const char *Desc, 
+  Transformation(const char *TransName, const char *Desc,
                  bool MultipleRewritesFlag)
-    : Name(TransName),
-      TransformationCounter(-1),
-      ValidInstanceNum(0),
-      QueryInstanceOnly(false),
-      Context(NULL),
-      SrcManager(NULL),
-      TransError(TransSuccess),
-      DescriptionString(Desc),
-      RewriteHelper(NULL),
-      Rewritten(false),
-      MultipleRewrites(MultipleRewritesFlag),
-      ToCounter(-1),
-      DoReplacement(false),
-      CheckReference(false),
-      WarnOnCounterOutOfBounds(false)
-  {
+      : Name(TransName), TransformationCounter(-1), ValidInstanceNum(0),
+        Instances(), QueryInstanceOnly(false), Context(NULL), SrcManager(NULL),
+        TransError(TransSuccess), DescriptionString(Desc), RewriteHelper(NULL),
+        Rewritten(false), MultipleRewrites(MultipleRewritesFlag), ToCounter(-1),
+        DoReplacement(false), CheckReference(false),
+        WarnOnCounterOutOfBounds(false) {
     // Nothing to do
   }
-
 
   virtual ~Transformation();
 
@@ -177,6 +155,8 @@ public:
   int getNumTransformationInstances() {
     return ValidInstanceNum;
   }
+
+  std::vector<std::string> getTransformationInstances() { return Instances; }
 
   virtual bool skipCounter() {
     return false;
@@ -318,6 +298,8 @@ protected:
   int TransformationCounter;
 
   int ValidInstanceNum;
+
+  std::vector<std::string> Instances;
 
   bool QueryInstanceOnly;
 

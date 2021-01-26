@@ -403,6 +403,17 @@ void TransformationManager::outputNumTransformationInstances()
                << NumInstances << "\n";
 }
 
+void TransformationManager::outputTransformationInstances() {
+  std::vector<string> Instances =
+      CurrentTransformationImpl->getTransformationInstances();
+  llvm::outs() << "Available transformation instances: \n";
+  uint32_t counter(0);
+  for (auto instance : Instances) {
+    ++counter;
+    llvm::outs() << " " << counter << " " << instance << "\n";
+  }
+}
+
 void TransformationManager::outputNumTransformationInstancesToStderr()
 {
   int NumInstances =

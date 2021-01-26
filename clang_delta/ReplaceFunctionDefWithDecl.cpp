@@ -20,6 +20,7 @@
 #include "clang/Basic/SourceManager.h"
 
 #include "TransformationManager.h"
+#include <iostream>
 
 using namespace clang;
 
@@ -315,6 +316,7 @@ void ReplaceFunctionDefWithDecl::doRewriting()
 void ReplaceFunctionDefWithDecl::addOneFunctionDef(const FunctionDecl *FD)
 {
   ValidInstanceNum++;
+  Instances.push_back(FD->getQualifiedNameAsString());
   if (ToCounter > 0) {
     AllValidFunctionDefs.push_back(FD);
     return;

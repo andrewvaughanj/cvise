@@ -251,8 +251,10 @@ int main(int argc, char **argv)
     Die(ErrorMsg);
   }
 
-  if (TransMgr->getQueryInstanceFlag()) 
+  if (TransMgr->getQueryInstanceFlag()) {
     TransMgr->outputNumTransformationInstances();
+    TransMgr->outputTransformationInstances();
+  }
   if (TransMgr->getReportInstancesCount())
     TransMgr->outputNumTransformationInstancesToStderr();
 
